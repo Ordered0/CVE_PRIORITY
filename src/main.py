@@ -1,15 +1,16 @@
 import click
 import sys
-from src.cli.parser import setup_parser
+# Removemos o import do parser que estava quebrando
 from src.core.cve_processor import CVEProcessor
 from src.cli.output_formatter import OutputFormatter
+from src.cli.input_handler import InputHandler
 from src.utils.logger import setup_logger
 
 # Configuração inicial de logs
 logger = setup_logger()
 
 @click.command()
-@click.option('--cves', nget=True, help='Lista de IDs CVE separados por espaço (ex: CVE-2024-001 CVE-2024-002)')
+@click.option('--cves', multiple=True, help='IDs CVE separados por espaço (ex: --cves CVE-2024-001 --cves CVE-2024-002)')
 @click.option('--file', type=click.Path(exists=True), help='Caminho para arquivo JSON contendo lista de CVEs')
 @click.option('--output', type=click.Choice(['table', 'json']), default='table', help='Formato de saída dos dados')
 @click.option('--sync-cache', is_flag=True, help='Força a atualização dos dados das APIs externas')
@@ -23,15 +24,14 @@ def main(cves, file, output, sync_cache, sync_frequency):
         # 1. Inicializa o processador
         processor = CVEProcessor(sync_cache=sync_cache, frequency=sync_frequency)
         
-        # 2. Coleta os IDs de entrada (dos argumentos ou do arquivo)
-        # delegamos para o input_handler futuramente
-        cve_list = list(cves) if cves else []
+        # 2. Coleta e valida os IDs de entrada usando o InputHandler
+        cve_list = InputHandler.parse_inputs(cves_args=cves, file_path=file)
         
-        if not cve_list and not file:
-            click.echo("Erro: Você deve fornecer ao menos um CVE ou um arquivo de entrada. Use --help para detalhes.")
+        if not cve_list:
+            click.echo("Erro: Você deve fornecer ao menos um CVE válido ou um arquivo de entrada. Use --help para detalhes.")
             sys.exit(1)
 
-        click.echo(f"[*] Iniciando processamento de {len(cve_list)} vulnerabilidades...")
+        click.echo(f"[*] Iniciando processamento de {len(cve_list)} vulnerabilidade(s)...")
 
         # 3. Processamento e Cálculo de Risco
         results = processor.run(cve_list)

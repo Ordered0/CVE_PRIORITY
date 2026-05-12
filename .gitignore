@@ -1,0 +1,27 @@
+# Arquivos de cache do Python e compilados
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C Extensions
+*.so
+
+# Ambientes Virtuais
+venv/
+env/
+.venv/
+
+# Banco de dados local (Cache do projeto)
+data/cache.db
+*.sqlite3
+
+# Logs da aplicação
+data/logs/
+*.log
+
+# Variáveis de ambiente (Segurança)
+.env
+
+# Arquivos do sistema operacional
+.DS_Store
+Thumbs.db
