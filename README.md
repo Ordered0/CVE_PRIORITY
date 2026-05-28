@@ -33,16 +33,14 @@ A aplicação é dividida em 5 camadas principais para garantir modularidade:
 
 ## 3. Configuração do Ambiente
 
-### Requisitos de Hardware
-O desenvolvimento e testes foram validados em:
-- **Modelo**: HP Victus 15
-- **Processador**: AMD Ryzen 5 8645HS
-- **Memória**: 24GB RAM DDR5
 
 ### Instalação Passo a Passo
 
 1.  **Ativar o Ambiente Virtual (venv)**:
     No terminal (PowerShell), dentro da pasta raiz:
+    ```powershell
+    python -m venv venv
+    ```
     ```powershell
     .\venv\Scripts\Activate.ps1
     ```
