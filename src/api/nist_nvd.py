@@ -1,5 +1,10 @@
+import os
+from dotenv import load_dotenv
 from src.api.api_client import APIClient
 from src.utils.exceptions import CVENotFoundError, InvalidMetricError
+
+# Carrega as variáveis de ambiente do arquivo .env
+load_dotenv()
 
 class NISTClient(APIClient):
     """
@@ -9,6 +14,13 @@ class NISTClient(APIClient):
     def __init__(self):
         # Endpoint base da API v2.0 do NVD
         super().__init__(base_url="https://services.nvd.nist.gov/rest/json/cves/2.0")
+        
+        # Busca a chave de API configurada no ambiente
+        api_key = os.getenv("NIST_API_KEY")
+        
+        # Se a chave estiver presente, configura a sessão para enviá-la em todas as requisições
+        if api_key:
+            self.session.headers.update({'apiKey': api_key})
 
     def get_cvss_score(self, cve_id):
         """
