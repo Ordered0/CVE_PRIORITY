@@ -1,52 +1,61 @@
 class RiskScorer:
     """
     Implementa o algoritmo de priorização de vulnerabilidades CVE.
-    Integra CVSS, EPSS, KEV e dados de Ransomware em um único Score de Risco.
+    Novo modelo: Risco Base multiplicativo (CVSS*EPSS) com aceleradores KEV e Ransomware.
     """
     
-    # Pesos definidos na arquitetura
-    WEIGHT_BASE = 0.70        # CVSS + EPSS
-    WEIGHT_KEV = 0.20         # Catálogo CISA KEV
-    WEIGHT_RANSOMWARE = 0.10  # Uso confirmado em Ransomware
+    # Fatores multiplicadores
+    KEV_MULTIPLIER = 1.2
+    NUCLEI_MULTIPLIER = 1.15
+    RANSOMWARE_MULTIPLIER = 1.1
+    
+    # 1.0 * 1.2 * 1.15 * 1.1 = 1.518
+    MAX_THEORETICAL_SCORE = 1.0 * KEV_MULTIPLIER * NUCLEI_MULTIPLIER * RANSOMWARE_MULTIPLIER
 
     @staticmethod
-    def calculate_score(cvss_score, epss_probability, in_kev, is_ransomware):
+    def calculate_score(cvss_score, epss_probability, in_kev, is_ransomware, has_nuclei):
         """
         Calcula o risco final baseado nas quatro métricas.
-        
-        :param cvss_score: Severidade do NIST (0.0 a 10.0)
-        :param epss_probability: Probabilidade do FIRST (0.0 a 1.0)
-        :param in_kev: Booleano (True se estiver no KEV)
-        :param is_ransomware: Booleano (True se associado a Ransomware)
-        :return: Float representando o Risco Final (0.0 a 1.0)
+        Aplica multiplicadores e normaliza o resultado para o intervalo [0.0, 1.0].
         """
-        # 1. Normalização dos dados
-        # O CVSS vem de 0 a 10. Normalizamos para 0.0 a 1.0
+        missing_cvss = False
+        missing_epss = False
+
+        # 1. Tratamento de dados faltantes (Assume 0.8)
+        if not cvss_score or float(cvss_score) == 0.0:
+            cvss_score = 8.0 
+            missing_cvss = True
+            
+        if not epss_probability or float(epss_probability) == 0.0:
+            epss_probability = 0.8 
+            missing_epss = True
+
+        # 2. Normalização da Base [0.0 a 1.0]
         cvss_norm = max(0.0, min(float(cvss_score) / 10.0, 1.0))
-        
-        # O EPSS da API do FIRST já vem como probabilidade (0.0 a 1.0)
         epss_norm = max(0.0, min(float(epss_probability), 1.0))
         
-        # Bônus Booleanos (1.0 se True, 0.0 se False)
-        kev_bonus = 1.0 if in_kev else 0.0
-        ransomware_bonus = 1.0 if is_ransomware else 0.0
+        # 3. Cálculo do Risco Base (Peso 1)
+        raw_score = cvss_norm * epss_norm
 
-        # 2. Cálculo do Risco Integrado
-        # Fórmula: ((CVSS_norm * EPSS_norm) * 0.70) + (KEV * 0.20) + (Ransomware * 0.10)
-        base_score = (cvss_norm * epss_norm) * RiskScorer.WEIGHT_BASE
-        kev_score = kev_bonus * RiskScorer.WEIGHT_KEV
-        ransomware_score = ransomware_bonus * RiskScorer.WEIGHT_RANSOMWARE
+        if in_kev:
+            raw_score *= RiskScorer.KEV_MULTIPLIER
+        if has_nuclei:
+            raw_score *= RiskScorer.NUCLEI_MULTIPLIER
+        if is_ransomware:
+            raw_score *= RiskScorer.RANSOMWARE_MULTIPLIER
 
-        # Soma e garante que o teto seja 1.0 (ou 100%)
-        final_score = base_score + kev_score + ransomware_score
+        final_score = raw_score / RiskScorer.MAX_THEORETICAL_SCORE
         
-        # Arredonda para 3 casas decimais para facilitar a leitura
-        return round(min(final_score, 1.0), 3)
+        return {
+            "score": round(final_score, 3),
+            "missing_cvss": missing_cvss,
+            "missing_epss": missing_epss
+        }
 
     @staticmethod
     def categorize_risk(score):
         """
-        (Opcional) Categoriza o score para exibição no terminal.
+        Categoriza o score para exibição no terminal.
         """
         if score >= 0.80:
             return "CRÍTICO"

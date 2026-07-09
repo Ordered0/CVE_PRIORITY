@@ -54,23 +54,21 @@ class DatabaseManager:
             return dict(row) if row else None
 
     def save_cve(self, cve_data):
-        """
-        Salva ou atualiza os dados de um CVE.
-        cve_data deve ser um dicionário com as chaves correspondentes às colunas.
-        """
         query = """
         INSERT INTO vulnerabilities (
-            cve_id, cvss_score, epss_percentile, kev_status, 
-            ransomware_used, last_updated, next_update
+            cve_id, cvss_score, cwe_id, epss_percentile, kev_status, 
+            ransomware_used, has_nuclei, last_updated, next_update
         ) VALUES (
-            :cve_id, :cvss_score, :epss_percentile, :kev_status, 
-            :ransomware_used, :last_updated, :next_update
+            :cve_id, :cvss_score, :cwe_id, :epss_percentile, :kev_status, 
+            :ransomware_used, :has_nuclei, :last_updated, :next_update
         )
         ON CONFLICT(cve_id) DO UPDATE SET
             cvss_score=excluded.cvss_score,
+            cwe_id=excluded.cwe_id,
             epss_percentile=excluded.epss_percentile,
             kev_status=excluded.kev_status,
             ransomware_used=excluded.ransomware_used,
+            has_nuclei=excluded.has_nuclei,
             last_updated=excluded.last_updated,
             next_update=excluded.next_update
         """

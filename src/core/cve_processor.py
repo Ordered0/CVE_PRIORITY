@@ -1,3 +1,4 @@
+import time
 from src.cache.database import DatabaseManager
 from src.cache.sync_manager import SyncManager
 from src.core.risk_scorer import RiskScorer
@@ -13,49 +14,45 @@ class CVEProcessor:
     """
     def __init__(self, sync_cache=False, frequency="weekly"):
         self.sync_cache = sync_cache
-        
-        # Inicializa a infraestrutura de dados
         self.db_manager = DatabaseManager()
         self.sync_manager = SyncManager(self.db_manager, frequency=frequency)
         self.scorer = RiskScorer()
 
     def run(self, cve_list):
-        """
-        Executa o fluxo completo (Pipeline) para uma lista de CVEs.
-        """
         processed_results = []
-        
-        # Remove duplicatas da entrada mantendo a ordem (opcional, mas boa prática)
         unique_cves = list(dict.fromkeys(cve_list))
 
         for cve_id in unique_cves:
-            # Futuro: Adicionar regex aqui para validar formato do CVE_ID (utils/validators.py)
             logger.info(f"Processando métricas para {cve_id}...")
             
             # 1. Busca os dados (Decide automaticamente entre SQLite ou APIs)
             data = self.sync_manager.get_cve_data(cve_id, force_sync=self.sync_cache)
             
-            # 2. Calcula o Score Integrado
-            score = self.scorer.calculate_score(
+            # 2. Calcula o Score Integrado repassando a flag has_nuclei
+            score_data = self.scorer.calculate_score(
                 cvss_score=data['cvss_score'],
                 epss_probability=data['epss_percentile'],
                 in_kev=data['kev_status'],
-                is_ransomware=data['ransomware_used']
+                is_ransomware=data['ransomware_used'],
+                has_nuclei=data['has_nuclei']
             )
             
-            # 3. Formata o dicionário de resultado para este CVE
+            # 3. Formata o dicionário de resultado contemplando CWE e Nuclei
             result = {
                 "cve_id": data['cve_id'],
+                "cwe_id": data['cwe_id'],
                 "cvss": data['cvss_score'],
-                # Converte o EPSS (0.0 a 1.0) para formato visual (0% a 100%)
                 "epss_percent": round(data['epss_percentile'] * 100, 2), 
                 "in_kev": data['kev_status'],
+                "has_nuclei": data['has_nuclei'],
                 "ransomware_used": data['ransomware_used'],
-                "risk_score": score,
-                "risk_category": self.scorer.categorize_risk(score)
+                "risk_score": score_data['score'],
+                "risk_category": self.scorer.categorize_risk(score_data['score']),
+                "missing_cvss": score_data['missing_cvss'],
+                "missing_epss": score_data['missing_epss']
             }
             processed_results.append(result)
-        
+            time.sleep(2.14)
         # 4. Ordena e Rankeia
         logger.info("Gerando ranking final...")
         final_ranking = Ranker.rank_vulnerabilities(processed_results)
