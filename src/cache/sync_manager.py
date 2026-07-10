@@ -4,6 +4,7 @@ from src.api.first_epss import EPSSClient
 from src.api.cisa_kev import CISAClient
 from src.api.ransomware_api import RansomwareClient
 from src.api.nuclei_github import NucleiClient
+from src.api.vulncheck_api import VulnCheckClient
 from src.utils.logger import setup_logger
 
 logger = setup_logger()
@@ -15,19 +16,20 @@ class SyncManager:
     def __init__(self, db_manager, frequency="weekly"):
         self.db = db_manager
         self.frequency = frequency
-        
+
         # Inicializa todos os clientes de API
         self.nist = NISTClient()
         self.epss = EPSSClient()
         self.cisa = CISAClient()
         self.ransomware = RansomwareClient()
         self.nuclei = NucleiClient()
+        self.vulncheck = VulnCheckClient()  # inativo automaticamente se não houver API key
 
     def _get_expiration_delta(self):
         """Define o tempo de validade do cache."""
         if self.frequency == "daily":
             return timedelta(days=1)
-        return timedelta(days=7) # Padrão semanal
+        return timedelta(days=7)  # Padrão semanal
 
     def get_cve_data(self, cve_id, force_sync=False):
         """
@@ -54,23 +56,27 @@ class SyncManager:
 
     def _fetch_and_save(self, cve_id, cached_data=None):
         """
-        Busca dados nas 5 APIs. Implementa fallback utilizando 
+        Busca dados nas APIs. Implementa fallback utilizando
         o dado antigo do cache em caso de falha na rede.
         """
         now = datetime.now(timezone.utc)
         next_update = now + self._get_expiration_delta()
 
-        # 1. CVSS e CWE (NIST)
+        # 1. CVSS e CWE (NIST, com fallback para VulnCheck NVD++ e depois cache)
         cvss_score = 0.0
         cwe_id = "N/A"
         try:
-            # Atenção: NISTClient.get_cvss_data() agora retorna dict
             nist_data = self.nist.get_cvss_data(cve_id)
             cvss_score = nist_data['score']
             cwe_id = nist_data['cwe']
         except Exception as e:
-            logger.warning(f"Falha ao buscar CVSS/CWE para {cve_id}: {e}. Tentando fallback.")
-            if cached_data:
+            logger.warning(f"Falha ao buscar CVSS/CWE (NIST) para {cve_id}: {e}. Tentando VulnCheck NVD++.")
+            vc_data = self.vulncheck.get_cvss_cwe(cve_id)
+            if vc_data:
+                cvss_score = vc_data['score']
+                cwe_id = vc_data['cwe']
+                logger.info(f"[{cve_id}] CVSS/CWE obtidos via VulnCheck NVD++ (fallback).")
+            elif cached_data:
                 cvss_score = cached_data.get('cvss_score', 0.0)
                 cwe_id = cached_data.get('cwe_id', "N/A")
 
@@ -83,9 +89,12 @@ class SyncManager:
             if cached_data:
                 epss_percentile = cached_data.get('epss_percentile', 0.0)
 
-        # 3. KEV, Ransomware e Nuclei 
+        # 3. KEV (união CISA + VulnCheck), Ransomware e Nuclei
         try:
-            in_kev = self.cisa.is_in_kev(cve_id)
+            in_kev_cisa = self.cisa.is_in_kev(cve_id)
+            in_kev_vulncheck = self.vulncheck.is_in_kev(cve_id)
+            in_kev = in_kev_cisa or in_kev_vulncheck
+
             is_ransomware = self.ransomware.is_used_in_ransomware(cve_id)
             has_nuclei = self.nuclei.has_template(cve_id)
         except Exception as e:
