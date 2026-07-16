@@ -4,54 +4,90 @@ Este projeto desenvolve uma ferramenta de linha de comando (CLI) em Python para 
 
 ## 1. Fundamentação Teórica
 
-A ferramenta utiliza um algoritmo de risco integrado baseado em quatro pilares fundamentais:
+A ferramenta utiliza um algoritmo de risco integrado baseado em cinco sinais principais:
 
-* **CVSS (Common Vulnerability Scoring System)**: Avalia a severidade técnica da falha (0.0 a 10.0).
-* **EPSS (Exploit Prediction Scoring System)**: Estima a probabilidade de exploração nos próximos 30 dias (0% a 100%).
-* **KEV (Known Exploited Vulnerabilities)**: Catálogo da CISA com vulnerabilidades que possuem exploração ativa confirmada.
-* **Ransomware Check**: Verifica se a vulnerabilidade é sabidamente utilizada em ataques de ransomware.
+* **CVSS (Common Vulnerability Scoring System)**: Avalia a severidade técnica da falha (0.0 a 10.0). Buscado primariamente no NIST/NVD, com fallback para o índice NVD++ da VulnCheck.
+* **EPSS (Exploit Prediction Scoring System)**: Estima a probabilidade de exploração nos próximos 30 dias (0% a 100%), via FIRST.org.
+* **KEV (Known Exploited Vulnerabilities)**: União dos catálogos da CISA e da VulnCheck (índice `vulncheck-kev`), indicando exploração ativa confirmada.
+* **Ransomware Check**: Verifica, a partir do feed da CISA, se a vulnerabilidade é sabidamente utilizada em ataques de ransomware.
+* **Nuclei Template**: Verifica, via API do GitHub, se existe um template de exploração público no repositório `projectdiscovery/nuclei-templates`.
 
 ### O Algoritmo de Scoring
-O cálculo do risco final segue a ponderação definida na arquitetura do sistema:
-- **70%**: Impacto combinado de CVSS e EPSS.
-- **20%**: Presença no catálogo KEV (CISA).
-- **10%**: Associação com Ransomware.
+
+O cálculo do risco final (`RiskScorer`) segue os seguintes passos:
+
+1. **Componente base (CVSS × EPSS)**: normaliza CVSS (`/10`) e EPSS (0–1) e multiplica os dois valores.
+   * Caso o CVSS ou o EPSS não estejam disponíveis, são usados valores padrão conservadores (CVSS = 8.0, EPSS = 0.8), e o resultado é sinalizado como `missing_cvss`/`missing_epss` na saída.
+2. **Qualificadores de exploração ativa**: o componente base é multiplicado por:
+   * `1.15` se existir template no Nuclei;
+   * `1.10` se o CVE for associado a ransomware.
+3. **Cap em 1.0**: o componente base (já qualificado) é limitado a no máximo 1.0 — ou seja, CVSS e EPSS altos sozinhos já são suficientes para atingir a categoria CRÍTICO, independentemente do KEV.
+4. **Bônus KEV (sem cap)**: se o CVE estiver no catálogo KEV, soma-se `+0.6` ao score **depois** do cap acima. Esse bônus não é limitado, garantindo que um CVE em KEV sempre fique à frente de um CRÍTICO equivalente fora do KEV no ranking final.
+
+**Categorias de risco** (sobre o score final):
+
+| Score          | Categoria |
+|----------------|-----------|
+| ≥ 0.80         | CRÍTICO   |
+| 0.60 – 0.79    | ALTO      |
+| 0.30 – 0.59    | MÉDIO     |
+| < 0.30         | BAIXO     |
 
 ---
 
 ## 2. Estrutura do Sistema
 
-A aplicação é dividida em 5 camadas principais para garantir modularidade:
+A aplicação é dividida em camadas principais para garantir modularidade:
 
-1.  **Interface CLI**: Entrada de dados (IDs CVE ou arquivos JSON) e flags de configuração.
-2.  **Engine de Processamento**: Lógica de validação, cálculo de score e ordenação.
-3.  **Coletor de Métricas**: Módulos específicos para buscar dados no NIST (NVD), FIRST e CISA.
-4.  **Gerenciador de Cache**: Persistência local em SQLite para otimizar o desempenho e respeitar limites de taxa das APIs.
-5.  **Clientes de APIs**: Camada de abstração para comunicação via HTTP com bases externas.
+1. **Interface CLI** (`src/main.py`, `src/cli/`): entrada de dados (IDs CVE ou arquivos JSON), validação de formato e flags de configuração; formatação da saída em tabela colorida (`click`) ou JSON.
+2. **Engine de Processamento** (`src/core/`):
+   * `cve_processor.py` — orquestra a busca de dados e o cálculo de score para cada CVE;
+   * `risk_scorer.py` — implementa o algoritmo de scoring descrito acima;
+   * `ranker.py` — ordena os resultados por score decrescente e atribui `priority_rank`.
+3. **Gerenciador de Cache** (`src/cache/`):
+   * `database.py` — persistência local em SQLite (`data/cache.db`);
+   * `schema.py` — definição das tabelas `vulnerabilities` e `cache_metadata`;
+   * `sync_manager.py` — decide entre reaproveitar o cache válido ou buscar dados atualizados nas APIs, com fallback para o último dado em cache em caso de falha de rede.
+4. **Clientes de APIs** (`src/api/`): camada de abstração HTTP com retry/backoff automático (`api_client.py`), com um cliente por fonte de dados:
+   * `nist_nvd.py` (CVSS/CWE via NIST/NVD)
+   * `first_epss.py` (EPSS via FIRST.org)
+   * `cisa_kev.py` (catálogo KEV da CISA)
+   * `ransomware_api.py` (uso conhecido em ransomware, via feed da CISA)
+   * `nuclei_github.py` (existência de template de exploit no repositório Nuclei, via API do GitHub)
+   * `vulncheck_api.py` (fonte adicional/fallback: KEV estendido e NVD++, opcional — requer `VULNCHECK_API_KEY`; se ausente, o cliente fica inativo sem quebrar o pipeline)
+5. **Utilitários** (`src/utils/`): validação de formato de CVE (`validators.py`), exceções customizadas (`exceptions.py`) e logging para console e arquivo (`logger.py`, com saída em `data/logs/`).
 
 ---
 
 ## 3. Configuração do Ambiente
 
-
 ### Instalação Passo a Passo
 
-1.  **Ativar o Ambiente Virtual (venv)**:
-    No terminal (PowerShell), dentro da pasta raiz:
-    ```powershell
-    python -m venv venv
-    ```
-    ```powershell
-    .\venv\Scripts\Activate.ps1
-    ```
+1. **Ativar o Ambiente Virtual (venv)**:
+   No terminal (PowerShell), dentro da pasta raiz:
+   ```powershell
+   python -m venv venv
+   ```
+   ```powershell
+   .\venv\Scripts\Activate.ps1
+   ```
 
-2.  **Instalar Dependências**:
-    Para evitar erros de compilação com o Pandas em versões recentes do Python, instale os utilitários de construção antes:
-    ```powershell
-    python.exe -m pip install --upgrade pip
-    pip install setuptools wheel
-    pip install -r requirements.txt
-    ```
+2. **Instalar Dependências**:
+   Para evitar erros de compilação com o Pandas em versões recentes do Python, instale os utilitários de construção antes:
+   ```powershell
+   python.exe -m pip install --upgrade pip
+   pip install setuptools wheel
+   pip install -r requirements.txt
+   ```
+
+3. **Variáveis de Ambiente (opcional)**:
+   Crie um arquivo `.env` na raiz do projeto para configurar chaves de API que aumentam os limites de requisição:
+   ```
+   NIST_API_KEY=sua_chave_aqui
+   GITHUB_API_TOKEN=seu_token_aqui
+   VULNCHECK_API_KEY=sua_chave_aqui
+   ```
+   Todas são opcionais — sem elas, a ferramenta funciona normalmente, apenas com limites de taxa mais restritos e sem o fallback/fonte adicional da VulnCheck.
 
 ---
 
@@ -60,23 +96,40 @@ A aplicação é dividida em 5 camadas principais para garantir modularidade:
 A ferramenta é executada via terminal utilizando o módulo `src.main`:
 
 * **Análise de CVEs específicos**:
-    ```powershell
-    python -m src.main --cves CVE-2024-0001 CVE-2024-0002
-    ```
+   ```powershell
+   python -m src.main --cves CVE-2024-0001 --cves CVE-2024-0002
+   ```
 
 * **Entrada via arquivo JSON**:
-    ```powershell
-    python -m src.main --file data/sample_cves.json
-    ```
+   ```powershell
+   python -m src.main --file data/sample_cves.json
+   ```
+   O JSON pode ser uma lista simples (`["CVE-...", ...]`) ou um objeto no formato `{"cves": ["CVE-...", ...]}`.
 
-* **Sincronização e Saída**:
-    Use `--sync-cache` para forçar a atualização dos dados e `--output json` se desejar exportar os resultados para integração com outros sistemas.
+* **Saída em JSON** (para integração com outras ferramentas):
+   ```powershell
+   python -m src.main --file data/sample_cves.json --output json
+   ```
+
+* **Cache e Sincronização**:
+   * `--sync-cache`: força a atualização dos dados direto nas APIs externas, ignorando o cache local.
+   * `--sync-frequency [daily|weekly]`: define por quanto tempo um dado em cache é considerado válido antes de expirar (padrão: `weekly`).
+
+Entradas inválidas (fora do padrão `CVE-YYYY-NNNNN`) são ignoradas e registradas como aviso no log.
 
 ---
 
-## 5. Cronograma de Desenvolvimento
+## 5. Dados de Exemplo
 
-* **Semanas 1-2**: Implementação dos Clientes de API (NIST, FIRST, CISA).
+O repositório inclui dois conjuntos de CVEs de exemplo em `data/`:
+* `sample_cves.json` — amostra menor, útil para testes rápidos.
+* `sample_cves_1000.json` — amostra maior, útil para testes de performance e validação em lote.
+
+---
+
+## 6. Cronograma de Desenvolvimento
+
+* **Semanas 1–2**: Implementação dos Clientes de API (NIST, FIRST, CISA, Nuclei, VulnCheck).
 * **Semana 3**: Setup do Banco de Dados SQLite e lógica de Cache.
 * **Semana 4**: Integração total das métricas.
 * **Semana 5**: Implementação do Algoritmo de Scoring.
@@ -84,6 +137,6 @@ A ferramenta é executada via terminal utilizando o módulo `src.main`:
 * **Semana 7**: Validação acadêmica e testes de benchmark.
 
 ---
-**Autores**: Rodrigo Caio Koelln Alfonsin  |  João Vitor Andrade Faccin
-**Instituição**: UTFPR-MD  
-**Contato**: alfonsin@alunos.utfpr.edu.br  |  joaofaccin@alunos.utfpr.edu.br 
+**Autores**: Rodrigo Caio Koelln Alfonsin | João Vitor Andrade Faccin
+**Instituição**: UTFPR-MD
+**Contato**: alfonsin@alunos.utfpr.edu.br | joaofaccin@alunos.utfpr.edu.br
