@@ -26,7 +26,7 @@ class CVEProcessor:
             logger.info(f"Processando métricas para {cve_id}...")
             
             # 1. Busca os dados (Decide automaticamente entre SQLite ou APIs)
-            data = self.sync_manager.get_cve_data(cve_id, force_sync=self.sync_cache)
+            data, from_cache = self.sync_manager.get_cve_data(cve_id, force_sync=self.sync_cache)
             
             # 2. Calcula o Score Integrado repassando a flag has_nuclei
             score_data = self.scorer.calculate_score(
@@ -52,7 +52,11 @@ class CVEProcessor:
                 "missing_epss": score_data['missing_epss']
             }
             processed_results.append(result)
-            time.sleep(2.14)
+
+            # Só aplica o delay se realmente bateu nas APIs externas
+            if not from_cache:
+                time.sleep(2.14)
+
         # 4. Ordena e Rankeia
         logger.info("Gerando ranking final...")
         final_ranking = Ranker.rank_vulnerabilities(processed_results)

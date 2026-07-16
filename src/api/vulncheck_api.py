@@ -54,38 +54,31 @@ class VulnCheckClient(APIClient):
             return False
 
     def get_cvss_cwe(self, cve_id):
-        """
-        Fallback de CVSS/CWE via NVD++ (Community), usado quando o NIST NVD falhar.
-        Retorna dict {"score": float, "cwe": str} ou None se não encontrado/indisponível.
-        """
         if not self.enabled:
             return None
-
         try:
             data = self.fetch("index/nist-nvd2", params={"cve": cve_id})
+            results = (data or {}).get("data", [])
+            if not results:
+                return None
+            entry = results[0]
+
+            score = 0.0
+            metrics = entry.get("metrics", {})
+            for metric_key in ("cvssMetricV31", "cvssMetricV30", "cvssMetricV2"):
+                metric_list = metrics.get(metric_key)
+                if metric_list:
+                    score = metric_list[0].get("cvssData", {}).get("baseScore", 0.0)
+                    break
+
+            cwe_id = "N/A"
+            weaknesses = entry.get("weaknesses", [])
+            if weaknesses:
+                descriptions = weaknesses[0].get("description", [])
+                if descriptions:
+                    cwe_id = descriptions[0].get("value", "N/A")
+
+            return {"score": score, "cwe": cwe_id}
         except Exception as e:
-            logger.warning(f"VulnCheck NVD++ indisponível para {cve_id}: {e}")
+            logger.warning(f"VulnCheck NVD++ indisponível ou malformado para {cve_id}: {e}")
             return None
-
-        results = (data or {}).get("data", [])
-        if not results:
-            return None
-
-        entry = results[0]
-
-        score = 0.0
-        metrics = entry.get("metrics", {})
-        for metric_key in ("cvssMetricV31", "cvssMetricV30", "cvssMetricV2"):
-            metric_list = metrics.get(metric_key)
-            if metric_list:
-                score = metric_list[0].get("cvssData", {}).get("baseScore", 0.0)
-                break
-
-        cwe_id = "N/A"
-        weaknesses = entry.get("weaknesses", [])
-        if weaknesses:
-            descriptions = weaknesses[0].get("description", [])
-            if descriptions:
-                cwe_id = descriptions[0].get("value", "N/A")
-
-        return {"score": score, "cwe": cwe_id}

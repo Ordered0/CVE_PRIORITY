@@ -1,33 +1,26 @@
 class RiskScorer:
     """
-    Implementa o algoritmo de priorização de vulnerabilidades CVE.
-    Modelo: Risco Base multiplicativo (CVSS*EPSS) com aceleradores Nuclei e Ransomware,
-    e bônus fixo (soma) para presença em KEV.
+    Modelo: componente base (CVSS x EPSS, qualificado por Nuclei/Ransomware)
+    é capado em 1.0 de forma independente -- ou seja, CVSS+EPSS altos sozinhos
+    já conseguem alcançar CRÍTICO, sem depender do KEV.
+
+    O bônus de KEV é somado DEPOIS desse cap, e NÃO é capado -- um CVE em
+    KEV pode ultrapassar 1.0, o que não cria uma categoria nova (ainda é
+    CRÍTICO), mas garante que ele fique sempre à frente de um CRÍTICO sem
+    KEV no ranking final.
     """
 
-    # Fatores multiplicadores (Nuclei e Ransomware continuam multiplicando o score base)
     NUCLEI_MULTIPLIER = 1.15
     RANSOMWARE_MULTIPLIER = 1.1
 
-    # KEV deixou de ser multiplicador e agora é uma soma fixa aplicada ao score bruto
-    KEV_BONUS = 1.0
-
-    # Score máximo teórico ANTES do bônus de KEV: 1.0 * 1.15 * 1.1 = 1.265
-    MAX_BASE_SCORE = 1.0 * NUCLEI_MULTIPLIER * RANSOMWARE_MULTIPLIER
-    # Score máximo teórico total, já incluindo o bônus fixo do KEV: 1.265 + 1.0 = 2.265
-    MAX_THEORETICAL_SCORE = MAX_BASE_SCORE + KEV_BONUS
+    # Bônus somado por fora, sem cap, quando o CVE está no catálogo KEV.
+    KEV_BONUS = 0.6
 
     @staticmethod
     def calculate_score(cvss_score, epss_probability, in_kev, is_ransomware, has_nuclei):
-        """
-        Calcula o risco final baseado nas quatro métricas.
-        Nuclei/Ransomware multiplicam o score base; KEV soma um bônus fixo.
-        Normaliza o resultado para o intervalo [0.0, 1.0].
-        """
         missing_cvss = False
         missing_epss = False
 
-        # 1. Tratamento de dados faltantes (Assume 0.8)
         if not cvss_score or float(cvss_score) == 0.0:
             cvss_score = 8.0
             missing_cvss = True
@@ -36,25 +29,26 @@ class RiskScorer:
             epss_probability = 0.8
             missing_epss = True
 
-        # 2. Normalização da Base [0.0 a 1.0]
         cvss_norm = max(0.0, min(float(cvss_score) / 10.0, 1.0))
         epss_norm = max(0.0, min(float(epss_probability), 1.0))
 
-        # 3. Cálculo do Risco Base (Peso 1)
-        raw_score = cvss_norm * epss_norm
-
+        # 1. Componente base: severidade x probabilidade de exploração,
+        #    qualificado por Nuclei/Ransomware
+        base_raw = cvss_norm * epss_norm
         if has_nuclei:
-            raw_score *= RiskScorer.NUCLEI_MULTIPLIER
+            base_raw *= RiskScorer.NUCLEI_MULTIPLIER
         if is_ransomware:
-            raw_score *= RiskScorer.RANSOMWARE_MULTIPLIER
+            base_raw *= RiskScorer.RANSOMWARE_MULTIPLIER
 
-        # 4. KEV agora é uma soma direta, não mais multiplicador
-        if in_kev:
-            raw_score += RiskScorer.KEV_BONUS
+        # 2. Capa o componente base em 1.0 -- CVSS+EPSS altos já alcançam
+        #    CRÍTICO sozinhos, independente do KEV
+        base_norm = min(base_raw, 1.0)
 
-        # 5. Normalização final
-        final_score = raw_score / RiskScorer.MAX_THEORETICAL_SCORE
-        final_score = min(final_score, 1.0)  # guarda de segurança contra arredondamento
+        # 3. KEV soma por fora, DEPOIS do cap do componente base, sem limite
+        #    superior -- extrapola de propósito para manter o ranking
+        #    coerente entre CVEs que já são CRÍTICOS
+        final_score = base_norm + (RiskScorer.KEV_BONUS if in_kev else 0.0)
+        final_score = max(0.0, final_score)  # só garante que não fique negativo
 
         return {
             "score": round(final_score, 3),

@@ -34,6 +34,7 @@ class SyncManager:
     def get_cve_data(self, cve_id, force_sync=False):
         """
         Retorna os dados do CVE. Prioriza o cache se estiver válido.
+        Retorna uma tupla: (dados, veio_do_cache: bool)
         """
         cached_data = self.db.get_cve(cve_id)
         now = datetime.now(timezone.utc)
@@ -49,10 +50,10 @@ class SyncManager:
 
         if not needs_update:
             logger.info(f"[{cve_id}] Lendo do cache local (Válido até {cached_data['next_update'][:10]}).")
-            return cached_data
+            return cached_data, True
 
         logger.info(f"[{cve_id}] Buscando dados atualizados nas APIs externas...")
-        return self._fetch_and_save(cve_id, cached_data)
+        return self._fetch_and_save(cve_id, cached_data), False
 
     def _fetch_and_save(self, cve_id, cached_data=None):
         """
