@@ -28,16 +28,19 @@ class CVEProcessor:
             # 1. Busca os dados (Decide automaticamente entre SQLite ou APIs)
             data, from_cache = self.sync_manager.get_cve_data(cve_id, force_sync=self.sync_cache)
             
-            # 2. Calcula o Score Integrado repassando a flag has_nuclei
+            # 2. Calcula o Score Integrado repassando has_nuclei e a contagem
+            #    de referências do CVE (sinal adicional; ver risk_scorer.py)
             score_data = self.scorer.calculate_score(
                 cvss_score=data['cvss_score'],
                 epss_probability=data['epss_percentile'],
                 in_kev=data['kev_status'],
                 is_ransomware=data['ransomware_used'],
-                has_nuclei=data['has_nuclei']
+                has_nuclei=data['has_nuclei'],
+                reference_count=data.get('reference_count', 0)
             )
             
-            # 3. Formata o dicionário de resultado contemplando CWE e Nuclei
+            # 3. Formata o dicionário de resultado contemplando CWE, Nuclei
+            #    e a contagem de referências usada no score
             result = {
                 "cve_id": data['cve_id'],
                 "cwe_id": data['cwe_id'],
@@ -46,6 +49,7 @@ class CVEProcessor:
                 "in_kev": data['kev_status'],
                 "has_nuclei": data['has_nuclei'],
                 "ransomware_used": data['ransomware_used'],
+                "reference_count": data.get('reference_count', 0),
                 "risk_score": score_data['score'],
                 "risk_category": self.scorer.categorize_risk(score_data['score']),
                 "missing_cvss": score_data['missing_cvss'],

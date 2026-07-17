@@ -63,23 +63,29 @@ class SyncManager:
         now = datetime.now(timezone.utc)
         next_update = now + self._get_expiration_delta()
 
-        # 1. CVSS e CWE (NIST, com fallback para VulnCheck NVD++ e depois cache)
+        # 1. CVSS, CWE e contagem de referências (NIST, com fallback para
+        #    VulnCheck NVD++ e depois cache). A contagem de referências
+        #    alimenta o bônus de RiskScorer (ver src/core/risk_scorer.py).
         cvss_score = 0.0
         cwe_id = "N/A"
+        reference_count = 0
         try:
             nist_data = self.nist.get_cvss_data(cve_id)
             cvss_score = nist_data['score']
             cwe_id = nist_data['cwe']
+            reference_count = nist_data.get('reference_count', 0)
         except Exception as e:
             logger.warning(f"Falha ao buscar CVSS/CWE (NIST) para {cve_id}: {e}. Tentando VulnCheck NVD++.")
             vc_data = self.vulncheck.get_cvss_cwe(cve_id)
             if vc_data:
                 cvss_score = vc_data['score']
                 cwe_id = vc_data['cwe']
+                reference_count = vc_data.get('reference_count', 0)
                 logger.info(f"[{cve_id}] CVSS/CWE obtidos via VulnCheck NVD++ (fallback).")
             elif cached_data:
                 cvss_score = cached_data.get('cvss_score', 0.0)
                 cwe_id = cached_data.get('cwe_id', "N/A")
+                reference_count = cached_data.get('reference_count', 0)
 
         # 2. EPSS (FIRST)
         epss_percentile = 0.0
@@ -116,6 +122,7 @@ class SyncManager:
             'kev_status': in_kev,
             'ransomware_used': is_ransomware,
             'has_nuclei': has_nuclei,
+            'reference_count': reference_count,
             'last_updated': now.isoformat(),
             'next_update': next_update.isoformat()
         }

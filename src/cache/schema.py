@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS vulnerabilities (
     kev_status BOOLEAN,
     ransomware_used BOOLEAN,
     has_nuclei BOOLEAN,
+    reference_count INTEGER DEFAULT 0,
     last_updated TIMESTAMP,
     next_update TIMESTAMP
 );
@@ -26,4 +27,12 @@ CREATE TABLE IF NOT EXISTS cache_metadata (
 SCHEMA_QUERIES = [
     CREATE_VULNERABILITIES_TABLE,
     CREATE_METADATA_TABLE
+]
+
+# Migração leve para bancos já existentes (criados antes da coluna
+# reference_count existir). CREATE TABLE IF NOT EXISTS não adiciona colunas
+# novas a tabelas já criadas, então o DatabaseManager tenta este ALTER TABLE
+# separadamente e ignora o erro caso a coluna já exista.
+MIGRATION_QUERIES = [
+    "ALTER TABLE vulnerabilities ADD COLUMN reference_count INTEGER DEFAULT 0;"
 ]

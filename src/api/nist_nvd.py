@@ -24,8 +24,14 @@ class NISTClient(APIClient):
 
     def get_cvss_data(self, cve_id):
         """
-        Busca o CVSS score e o CWE (tipo da falha) para um CVE específico.
-        Retorna um dicionário: {'score': float, 'cwe': str}
+        Busca o CVSS score, o CWE (tipo da falha) e a contagem de
+        referências para um CVE específico.
+
+        A contagem de referências é usada pelo RiskScorer como sinal
+        adicional: segundo Jacobs et al. (2023), é a feature individual
+        de maior contribuição SHAP para prever exploração real (arXiv:2302.14172).
+
+        Retorna um dicionário: {'score': float, 'cwe': str, 'reference_count': int}
         """
         params = {'cveId': cve_id}
         data = self.fetch(endpoint="", params=params)
@@ -36,7 +42,10 @@ class NISTClient(APIClient):
 
         cve_data = vulnerabilities[0].get('cve', {})
         metrics = cve_data.get('metrics', {})
-        
+
+        # Extração da contagem de referências (MITRE CVE List / NVD)
+        reference_count = len(cve_data.get('references', []))
+
         # Extração do CWE (Tipo de Vulnerabilidade)
         cwe_id = "N/A"
         weaknesses = cve_data.get('weaknesses', [])
@@ -61,4 +70,4 @@ class NISTClient(APIClient):
         else:
             raise InvalidMetricError(f"Métricas CVSS não disponíveis para o CVE {cve_id}.")
             
-        return {"score": cvss_score, "cwe": cwe_id}
+        return {"score": cvss_score, "cwe": cwe_id, "reference_count": reference_count}

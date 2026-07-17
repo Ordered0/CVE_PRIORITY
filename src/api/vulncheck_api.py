@@ -54,6 +54,10 @@ class VulnCheckClient(APIClient):
             return False
 
     def get_cvss_cwe(self, cve_id):
+        """
+        Fallback de CVSS/CWE via NVD++. Também extrai a contagem de
+        referências do CVE, usada como sinal adicional pelo RiskScorer.
+        """
         if not self.enabled:
             return None
         try:
@@ -78,7 +82,9 @@ class VulnCheckClient(APIClient):
                 if descriptions:
                     cwe_id = descriptions[0].get("value", "N/A")
 
-            return {"score": score, "cwe": cwe_id}
+            reference_count = len(entry.get("references", []))
+
+            return {"score": score, "cwe": cwe_id, "reference_count": reference_count}
         except Exception as e:
             logger.warning(f"VulnCheck NVD++ indisponível ou malformado para {cve_id}: {e}")
             return None

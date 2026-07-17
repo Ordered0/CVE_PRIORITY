@@ -3,7 +3,7 @@
 import sqlite3
 import os
 from contextlib import contextmanager
-from src.cache.schema import SCHEMA_QUERIES
+from src.cache.schema import SCHEMA_QUERIES, MIGRATION_QUERIES
 from src.utils.logger import setup_logger
 from src.utils.exceptions import CacheError
 
@@ -38,11 +38,22 @@ class DatabaseManager:
             conn.close()
 
     def init_db(self):
-        """Cria as tabelas se não existirem."""
+        """Cria as tabelas se não existirem e aplica migrações leves."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             for query in SCHEMA_QUERIES:
                 cursor.execute(query)
+
+            # Aplica migrações de colunas novas em bancos já existentes.
+            # ALTER TABLE ADD COLUMN falha com "duplicate column" se a
+            # coluna já existir -- isso é esperado e ignorado.
+            for migration in MIGRATION_QUERIES:
+                try:
+                    cursor.execute(migration)
+                except sqlite3.OperationalError as e:
+                    if "duplicate column" not in str(e).lower():
+                        raise
+
             conn.commit()
 
     def get_cve(self, cve_id):
@@ -57,10 +68,10 @@ class DatabaseManager:
         query = """
         INSERT INTO vulnerabilities (
             cve_id, cvss_score, cwe_id, epss_percentile, kev_status, 
-            ransomware_used, has_nuclei, last_updated, next_update
+            ransomware_used, has_nuclei, reference_count, last_updated, next_update
         ) VALUES (
             :cve_id, :cvss_score, :cwe_id, :epss_percentile, :kev_status, 
-            :ransomware_used, :has_nuclei, :last_updated, :next_update
+            :ransomware_used, :has_nuclei, :reference_count, :last_updated, :next_update
         )
         ON CONFLICT(cve_id) DO UPDATE SET
             cvss_score=excluded.cvss_score,
@@ -69,6 +80,7 @@ class DatabaseManager:
             kev_status=excluded.kev_status,
             ransomware_used=excluded.ransomware_used,
             has_nuclei=excluded.has_nuclei,
+            reference_count=excluded.reference_count,
             last_updated=excluded.last_updated,
             next_update=excluded.next_update
         """
