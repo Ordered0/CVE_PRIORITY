@@ -68,10 +68,10 @@ class DatabaseManager:
         query = """
         INSERT INTO vulnerabilities (
             cve_id, cvss_score, cwe_id, epss_percentile, kev_status, 
-            ransomware_used, has_nuclei, reference_count, last_updated, next_update
+            ransomware_used, has_nuclei, has_metasploit, reference_count, last_updated, next_update
         ) VALUES (
             :cve_id, :cvss_score, :cwe_id, :epss_percentile, :kev_status, 
-            :ransomware_used, :has_nuclei, :reference_count, :last_updated, :next_update
+            :ransomware_used, :has_nuclei, :has_metasploit, :reference_count, :last_updated, :next_update
         )
         ON CONFLICT(cve_id) DO UPDATE SET
             cvss_score=excluded.cvss_score,
@@ -80,6 +80,7 @@ class DatabaseManager:
             kev_status=excluded.kev_status,
             ransomware_used=excluded.ransomware_used,
             has_nuclei=excluded.has_nuclei,
+            has_metasploit=excluded.has_metasploit,
             reference_count=excluded.reference_count,
             last_updated=excluded.last_updated,
             next_update=excluded.next_update

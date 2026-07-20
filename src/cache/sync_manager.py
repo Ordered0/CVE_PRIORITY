@@ -4,6 +4,7 @@ from src.api.first_epss import EPSSClient
 from src.api.cisa_kev import CISAClient
 from src.api.ransomware_api import RansomwareClient
 from src.api.nuclei_github import NucleiClient
+from src.api.metasploit_github import MetasploitClient
 from src.api.vulncheck_api import VulnCheckClient
 from src.utils.logger import setup_logger
 
@@ -23,6 +24,7 @@ class SyncManager:
         self.cisa = CISAClient()
         self.ransomware = RansomwareClient()
         self.nuclei = NucleiClient()
+        self.metasploit = MetasploitClient()
         self.vulncheck = VulnCheckClient()  # inativo automaticamente se não houver API key
 
     def _get_expiration_delta(self):
@@ -96,7 +98,7 @@ class SyncManager:
             if cached_data:
                 epss_percentile = cached_data.get('epss_percentile', 0.0)
 
-        # 3. KEV (união CISA + VulnCheck), Ransomware e Nuclei
+        # 3. KEV (união CISA + VulnCheck), Ransomware, Nuclei e Metasploit
         try:
             in_kev_cisa = self.cisa.is_in_kev(cve_id)
             in_kev_vulncheck = self.vulncheck.is_in_kev(cve_id)
@@ -104,14 +106,16 @@ class SyncManager:
 
             is_ransomware = self.ransomware.is_used_in_ransomware(cve_id)
             has_nuclei = self.nuclei.has_template(cve_id)
+            has_metasploit = self.metasploit.has_module(cve_id)
         except Exception as e:
-            logger.warning(f"Falha ao consultar KEV/Ransomware/Nuclei para {cve_id}: {e}")
+            logger.warning(f"Falha ao consultar KEV/Ransomware/Nuclei/Metasploit para {cve_id}: {e}")
             if cached_data:
                 in_kev = cached_data.get('kev_status', False)
                 is_ransomware = cached_data.get('ransomware_used', False)
                 has_nuclei = cached_data.get('has_nuclei', False)
+                has_metasploit = cached_data.get('has_metasploit', False)
             else:
-                in_kev, is_ransomware, has_nuclei = False, False, False
+                in_kev, is_ransomware, has_nuclei, has_metasploit = False, False, False, False
 
         # Prepara objeto para salvar no SQLite
         cve_new_data = {
@@ -122,6 +126,7 @@ class SyncManager:
             'kev_status': in_kev,
             'ransomware_used': is_ransomware,
             'has_nuclei': has_nuclei,
+            'has_metasploit': has_metasploit,
             'reference_count': reference_count,
             'last_updated': now.isoformat(),
             'next_update': next_update.isoformat()

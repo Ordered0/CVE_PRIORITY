@@ -25,6 +25,7 @@ contra CVSS e versões anteriores do próprio EPSS.
 | KEV | CISA (+ VulnCheck) | Exploração ativa confirmada |
 | Ransomware | CISA (campo `knownRansomwareCampaignUse`) | Uso confirmado em ransomware |
 | Nuclei | GitHub (projectdiscovery/nuclei-templates) | Existência de template de exploração pronto |
+| Metasploit | GitHub (rapid7/metasploit-framework) | Existência de módulo de exploração pronto |
 | Contagem de referências | NIST/NVD (+ VulnCheck NVD++) | Sinal de maturidade/atenção da comunidade |
 
 ## Por que EPSS domina o componente base, e não CVSS
@@ -112,11 +113,47 @@ contagem de referências obtida do NIST/NVD, normalizado até
   malicioso confirmado por campanhas reais), análogo em espírito ao KEV.
   Por isso mantivemos seu peso relativamente mais alto que o do Nuclei.
 
+## Por que Metasploit virou um critério próprio, separado do Nuclei
+
+O paper trata "Exploit:metasploit" e "Scanner:Nuclei" como duas features
+completamente distintas (Tabela 1: a primeira faz parte de "Publicly
+available exploit code", junto com Exploit-DB e GitHub; a segunda faz
+parte de "Offensive security tools and scanners", junto com Intrigue,
+Jaeles e Sn1per). Antes desta mudança, o projeto só verificava a
+existência de template no Nuclei — o Metasploit não era consultado.
+
+Duas evidências do paper justificam tratá-lo como sinal próprio, e não
+como "mais uma fonte igual ao Nuclei":
+
+1. **Importância individual (SHAP, Fig. 7)**: "Exploit:metasploit"
+   aparece com contribuição individual maior que "Scanner:Nuclei" no
+   ranking das 30 features mais relevantes do modelo.
+2. **Desempenho como heurística isolada (Fig. 3, Seção 5.4)**: a
+   estratégia de remediação baseada apenas em "existe módulo Metasploit?"
+   atinge **60.5% de eficiência** — superando até a lista **KEV da CISA
+   (53.2%)** — com **quase 3x mais cobertura** (14.9% vs 5.9%) para um
+   nível de esforço quase idêntico (1.0% vs 0.5% das CVEs). O próprio
+   paper conclui: *"based on this simple heuristic (KEV vs Metasploit),
+   the Metasploit strategy outperforms the KEV strategy"*.
+
+Por isso, `has_metasploit` entra como sinal independente de `has_nuclei`,
+com um multiplicador maior (`METASPLOIT_MULTIPLIER = 1.20`, contra `1.08`
+do Nuclei), e os dois se acumulam quando ambos estão presentes.
+
+**Nota sobre a implementação:** não existe uma API pública e gratuita do
+Metasploit Pro para essa checagem. Assim como o `NucleiClient` já fazia
+para o Nuclei, o `MetasploitClient` usa a busca de código do GitHub
+(`repo:rapid7/metasploit-framework`) apenas como **mecanismo técnico de
+acesso** — o critério de risco continua sendo "existe módulo Metasploit
+para este CVE?", e o GitHub é somente onde esse código-fonte está
+hospedado publicamente, não o critério em si.
+
 ## Resumo da fórmula final
 
 ```
 base_raw   = epss_norm^0.7 * cvss_norm^0.3
              * (1.08 se has_nuclei)
+             * (1.20 se has_metasploit)
              * (1.15 se is_ransomware)
 
 base_norm  = min(base_raw, 1.0)

@@ -52,9 +52,29 @@ class RiskScorer:
        análogo em espírito ao KEV (evidência concreta de uso malicioso
        confirmado), e mantivemos seu peso relativamente maior (1.10 ->
        1.15).
+
+    6. Metasploit como critério próprio, com peso maior que o do Nuclei.
+       O paper trata "Exploit:metasploit" como uma feature distinta de
+       "Scanner:Nuclei", e o SHAP (Fig. 7) mostra que a existência de
+       módulo Metasploit tem contribuição individual maior do que a
+       existência de template no Nuclei. Além disso, como heurística de
+       remediação isolada (Fig. 3, Seção 5.4), a estratégia baseada em
+       Metasploit atinge 60.5% de eficiência -- superando até a lista
+       KEV da CISA (53.2%) -- com quase 3x mais cobertura (14.9% vs
+       5.9%) para um nível de esforço muito próximo. O próprio paper
+       conclui que "a estratégia baseada em Metasploit supera a
+       estratégia baseada em KEV" nesse comparativo. Por isso
+       adicionamos `has_metasploit` como sinal independente de
+       `has_nuclei`, com um multiplicador mais alto (METASPLOIT_
+       MULTIPLIER=1.20), refletindo a maior confiabilidade desse sinal
+       segundo o paper. A checagem em si é feita via busca de código no
+       GitHub (repositório oficial rapid7/metasploit-framework), já que
+       não existe API pública gratuita do Metasploit Pro -- o GitHub é
+       apenas o mecanismo técnico de acesso, não o critério de risco.
     """
 
     NUCLEI_MULTIPLIER = 1.08
+    METASPLOIT_MULTIPLIER = 1.20
     RANSOMWARE_MULTIPLIER = 1.15
 
     # Bônus somado por fora, sem cap, quando o CVE está no catálogo KEV.
@@ -74,7 +94,7 @@ class RiskScorer:
 
     @staticmethod
     def calculate_score(cvss_score, epss_probability, in_kev, is_ransomware,
-                         has_nuclei, reference_count=0):
+                         has_nuclei, has_metasploit=False, reference_count=0):
         missing_cvss = False
         missing_epss = False
 
@@ -90,10 +110,12 @@ class RiskScorer:
         epss_norm = max(0.0, min(float(epss_probability), 1.0))
 
         # 1. Componente base: média geométrica ponderada (EPSS domina, CVSS
-        #    modula), qualificada por Nuclei/Ransomware.
+        #    modula), qualificada por Nuclei/Metasploit/Ransomware.
         base_raw = (epss_norm ** RiskScorer.EPSS_WEIGHT) * (cvss_norm ** RiskScorer.CVSS_WEIGHT)
         if has_nuclei:
             base_raw *= RiskScorer.NUCLEI_MULTIPLIER
+        if has_metasploit:
+            base_raw *= RiskScorer.METASPLOIT_MULTIPLIER
         if is_ransomware:
             base_raw *= RiskScorer.RANSOMWARE_MULTIPLIER
 

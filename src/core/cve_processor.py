@@ -36,6 +36,7 @@ class CVEProcessor:
                 in_kev=data['kev_status'],
                 is_ransomware=data['ransomware_used'],
                 has_nuclei=data['has_nuclei'],
+                has_metasploit=data.get('has_metasploit', False),
                 reference_count=data.get('reference_count', 0)
             )
             
@@ -48,6 +49,7 @@ class CVEProcessor:
                 "epss_percent": round(data['epss_percentile'] * 100, 2), 
                 "in_kev": data['kev_status'],
                 "has_nuclei": data['has_nuclei'],
+                "has_metasploit": data.get('has_metasploit', False),
                 "ransomware_used": data['ransomware_used'],
                 "reference_count": data.get('reference_count', 0),
                 "risk_score": score_data['score'],
