@@ -61,7 +61,7 @@ class CVEProcessor:
 
             # Só aplica o delay se realmente bateu nas APIs externas
             if not from_cache:
-                time.sleep(2.14)
+                time.sleep(0.8)
 
         # 4. Ordena e Rankeia
         logger.info("Gerando ranking final...")

@@ -31,7 +31,19 @@ class APIClient:
 
     def fetch(self, endpoint, params=None):
         """
-        Executa uma requisição GET de forma segura.
+        Executa uma requisição GET de forma segura e retorna o JSON.
+        """
+        response = self.fetch_response(endpoint, params=params)
+        return response.json() if response is not None else None
+
+    def fetch_response(self, endpoint, params=None):
+        """
+        Executa uma requisição GET e retorna o objeto Response cru (não
+        apenas o JSON). Útil quando o chamador precisa inspecionar headers
+        da resposta -- por exemplo, os headers de rate limit
+        (X-RateLimit-Remaining / X-RateLimit-Reset) que a API do GitHub
+        retorna em toda chamada, usados pelo MetasploitClient para pacing
+        adaptativo do endpoint de code search.
         """
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         try:
@@ -41,7 +53,7 @@ class APIClient:
                 timeout=self.timeout
             )
             response.raise_for_status()
-            return response.json()
+            return response
             
         except requests.exceptions.HTTPError as e:
             logger.error(f"Erro HTTP ao acessar {url}: {e}")
